@@ -4,9 +4,24 @@
 #pragma once
 
 #include <vk_types.h>
+#include <vector>
 
 class VulkanEngine {
 public:
+
+	//Init Vulkan
+	VkInstance _instance;
+	VkDebugUtilsMessengerEXT _debug_messenger;
+	VkPhysicalDevice _chosenGPU;
+	VkDevice _device;
+	VkSurfaceKHR _surface;
+
+	//swap chain
+	VkSwapchainKHR _swapchain;
+	VkFormat _swapchainImageFormat;
+	std::vector<VkImage> _swapchainImages;
+	std::vector<VkImageView> _swapchainImageViews;
+
 
 	bool _isInitialized{ false };
 	int _frameNumber {0};
@@ -26,4 +41,9 @@ public:
 
 	//run main loop
 	void run();
+
+private:
+	void init_vulkan();
+
+	void init_swapchain();
 };
