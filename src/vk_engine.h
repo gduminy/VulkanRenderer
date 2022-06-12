@@ -7,6 +7,7 @@
 #include <vector>
 #include <deque>
 #include <functional>
+#include <vk_mesh.h>
 
 struct DeletionQueue
 {
@@ -66,6 +67,9 @@ public:
 
 	VmaAllocator _allocator;
 
+	VkPipeline _meshPipeline;
+	Mesh _triangleMesh;
+
 	int _selectedShader{ 0 };
 
 	bool _isInitialized{ false };
@@ -103,6 +107,10 @@ private:
 	void init_pipeline();
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModuel);
+
+	void load_meshes();
+
+	void upload_mesh(Mesh& mesh);
 };
 
 

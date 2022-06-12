@@ -14,6 +14,8 @@ add_executable(vulkan_guide
     vk_initializers.h
     vk_pipeline.h
     vk_pipeline.cpp
+    vk_mesh.h
+    vk_mesh.cpp
     ${GLSL_SOURCE_FILES})
 
 set_property(TARGET vulkan_guide PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:vulkan_guide>")
