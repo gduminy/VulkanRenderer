@@ -9,6 +9,13 @@
 #include <functional>
 #include <vk_mesh.h>
 
+#include <glm/glm.hpp>
+
+struct MeshPushConstants {
+	glm::vec4 data;
+	glm::mat4 render_matrix;
+};
+
 struct DeletionQueue
 {
 	std::deque<std::function<void()>> deletors;
@@ -69,6 +76,15 @@ public:
 
 	VkPipeline _meshPipeline;
 	Mesh _triangleMesh;
+
+	VkPipelineLayout _meshPipelineLayout;
+
+	Mesh _monkeyMesh;
+
+	VkImageView _depthImageView;
+	AllocatedImage _depthImage;
+
+	VkFormat _depthFormat;
 
 	int _selectedShader{ 0 };
 
