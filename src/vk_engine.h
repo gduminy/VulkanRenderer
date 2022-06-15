@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <vk_mesh.h>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 
@@ -34,6 +35,19 @@ struct DeletionQueue
 
 		deletors.clear();
 	}
+};
+
+struct Material 
+{
+	VkPipeline pipeline;
+	VkPipelineLayout pipelineLayout;
+};
+
+struct RenderObject
+{
+	Mesh* mesh;
+	Material* material;
+	glm::mat4 transformMatrix;
 };
 
 class VulkanEngine {
@@ -67,24 +81,17 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 
-	VkPipelineLayout _trianglePipelineLayout;
-
-	VkPipeline _trianglePipeline;
-	VkPipeline _redTrianglePipeline;
-
 	VmaAllocator _allocator;
-
-	VkPipeline _meshPipeline;
-	Mesh _triangleMesh;
-
-	VkPipelineLayout _meshPipelineLayout;
-
-	Mesh _monkeyMesh;
 
 	VkImageView _depthImageView;
 	AllocatedImage _depthImage;
 
 	VkFormat _depthFormat;
+
+	std::vector<RenderObject> _renderable;
+
+	std::unordered_map<std::string, Material> _materials;
+	std::unordered_map<std::string, Mesh> _meshes;
 
 	int _selectedShader{ 0 };
 
@@ -107,6 +114,13 @@ public:
 	//run main loop
 	void run();
 
+	Material* createMaterial(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
+	Material* getMaterial(const std::string& name);
+
+	Mesh* getMesh(const std::string& name);
+
+	void drawObjects(VkCommandBuffer cmd, RenderObject* first, int count);
+
 private:
 	void init_vulkan();
 
@@ -121,6 +135,8 @@ private:
 	void init_sync_structures();
 
 	void init_pipeline();
+
+	void init_scene();
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModuel);
 
