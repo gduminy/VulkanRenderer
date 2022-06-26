@@ -37,5 +37,9 @@ namespace vkinit {
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info(bool bDepthTest, bool bDepthWrite, VkCompareOp compareOp);
 
 	VkRenderPassBeginInfo renderpass_begin_info(VkRenderPass renderPass, VkExtent2D extent, VkFramebuffer frameBuffer);
+
+	VkDescriptorSetLayoutBinding descriptorLayoutBinding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding);
+
+	VkWriteDescriptorSet writeDescriptorBuffer(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorBufferInfo* bufferInfo, uint32_t binding);
 }
 

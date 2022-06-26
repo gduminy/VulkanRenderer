@@ -12,6 +12,8 @@
 
 #include <glm/glm.hpp>
 
+constexpr unsigned int FRAME_OVERLAP = 2;
+
 struct MeshPushConstants {
 	glm::vec4 data;
 	glm::mat4 render_matrix;
@@ -50,6 +52,43 @@ struct RenderObject
 	glm::mat4 transformMatrix;
 };
 
+struct GPUCameraData
+{
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewproj;
+};
+
+struct GPUObjectData
+{
+	glm::mat4 modelMatrix;
+};
+
+struct FrameData
+{
+	VkSemaphore _presentSemaphore, _renderSemaphore;
+	VkFence _renderFence;
+
+	VkCommandPool _commandPool;
+	VkCommandBuffer _mainCommandBuffer;
+
+	AllocatedBuffer cameraBuffer;
+
+	VkDescriptorSet globalDescrptor;
+
+	AllocatedBuffer objectBuffer;
+	VkDescriptorSet objectDescriptor;
+};
+
+struct GPUSceneData
+{
+	glm::vec4 fogColor; // w is for exponent
+	glm::vec4 fogDistances; //x for min, y for max, zw unused.
+	glm::vec4 ambientColor;
+	glm::vec4 sunlightDirection; //w for sun power
+	glm::vec4 sunlightColor;
+};
+
 class VulkanEngine {
 public:
 
@@ -70,16 +109,10 @@ public:
 
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
-
-	VkCommandPool _commandPool;
-	VkCommandBuffer _mainCommandBuffer;
 	
 	VkRenderPass _renderPass;
 
 	std::vector<VkFramebuffer> _frameBuffers;
-
-	VkSemaphore _presentSemaphore, _renderSemaphore;
-	VkFence _renderFence;
 
 	VmaAllocator _allocator;
 
@@ -92,6 +125,16 @@ public:
 
 	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
+
+	FrameData _frames[FRAME_OVERLAP];
+
+	VkDescriptorSetLayout _globalSetLayout;
+	VkDescriptorSetLayout _objectSetLayout;
+	VkDescriptorPool _descriptorPool;
+	VkPhysicalDeviceProperties _gpuProperties;
+
+	GPUSceneData _sceneParameters;
+	AllocatedBuffer _sceneParameterBuffer;
 
 	int _selectedShader{ 0 };
 
@@ -121,6 +164,11 @@ public:
 
 	void drawObjects(VkCommandBuffer cmd, RenderObject* first, int count);
 
+	FrameData& get_current_frame();
+
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	size_t padUniformBufferSize(size_t originalSize);
+	
 private:
 	void init_vulkan();
 
@@ -137,6 +185,8 @@ private:
 	void init_pipeline();
 
 	void init_scene();
+
+	void init_descriptor();
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModuel);
 
