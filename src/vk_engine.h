@@ -136,6 +136,9 @@ public:
 	GPUSceneData _sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;
 
+	//Exersice 1 desc set et 1 buffer pour camera e tscenebuffer avec data de toutes les frames; 
+	AllocatedBuffer _sceneAndCameraParameterBuffer;
+
 	int _selectedShader{ 0 };
 
 	bool _isInitialized{ false };

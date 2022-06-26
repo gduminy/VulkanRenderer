@@ -781,9 +781,11 @@ void VulkanEngine::drawObjects(VkCommandBuffer cmd, RenderObject* first, int cou
 	camData.view = view;
 	camData.viewproj = projection * view;
 
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
 	//and copy it to the buffer
-	void* data;
-	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
+	char* data;
+	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, (void**)&data);
+	data += padUniformBufferSize(sizeof(GPUCameraData)) * frameIndex;
 	memcpy(data, &camData, sizeof(GPUCameraData));
 	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
 
@@ -792,9 +794,8 @@ void VulkanEngine::drawObjects(VkCommandBuffer cmd, RenderObject* first, int cou
 
 	char* sceneData;
 	vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
-	sceneData += padUniformBufferSize(sizeof(GPUSceneData)) * frameIndex;
+	sceneData += padUniformBufferSize(sizeof(GPUCameraData)) * FRAME_OVERLAP + padUniformBufferSize(sizeof(GPUSceneData)) * frameIndex;
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
 	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
@@ -826,8 +827,9 @@ void VulkanEngine::drawObjects(VkCommandBuffer cmd, RenderObject* first, int cou
 			//bind the descriptor set when changing pipeline
 
 			//offset for our scene buffer
-			uint32_t uniform_offset = padUniformBufferSize(sizeof(GPUSceneData)) * frameIndex;
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescrptor, 1, &uniform_offset);
+			uint32_t uniform_offset[] = { padUniformBufferSize(sizeof(GPUCameraData)) * frameIndex , 
+				( padUniformBufferSize(sizeof(GPUCameraData)) * FRAME_OVERLAP + padUniformBufferSize(sizeof(GPUSceneData)) * frameIndex) };
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescrptor, 2, uniform_offset);
 
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
 		}
@@ -909,7 +911,7 @@ void VulkanEngine::init_descriptor()
 	vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool);
 
 	//binding for camera data at 0
-	VkDescriptorSetLayoutBinding cameraBind = vkinit::descriptorLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutBinding cameraBind = vkinit::descriptorLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
 	//binding for scene data at 1
 	VkDescriptorSetLayoutBinding sceneBind = vkinit::descriptorLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
@@ -938,12 +940,13 @@ void VulkanEngine::init_descriptor()
 
 	vkCreateDescriptorSetLayout(_device, &setInfoObject, nullptr, &_objectSetLayout);
 
-	const size_t sceneParamBufferSier = FRAME_OVERLAP * padUniformBufferSize(sizeof(GPUSceneData));
-	_sceneParameterBuffer = create_buffer(sceneParamBufferSier, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	const size_t sceneCameraParamBufferSier = FRAME_OVERLAP * padUniformBufferSize(sizeof(GPUCameraData) + FRAME_OVERLAP * padUniformBufferSize(sizeof(GPUSceneData)));
+	AllocatedBuffer sceneCameraParameterBuffer = create_buffer(sceneCameraParamBufferSier, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_sceneParameterBuffer = sceneCameraParameterBuffer;
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
 	{
-		_frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].cameraBuffer = sceneCameraParameterBuffer;
 
 		//allocate the descriptor set for each frame
 		VkDescriptorSetAllocateInfo allocInfo = {};
@@ -951,7 +954,6 @@ void VulkanEngine::init_descriptor()
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		//using the pool we just set
 		allocInfo.descriptorPool = _descriptorPool;
-		//only 1 descriptor = 
 		allocInfo.descriptorSetCount = 1;
 		//using the global data layout
 		allocInfo.pSetLayouts = &_globalSetLayout;
@@ -967,7 +969,6 @@ void VulkanEngine::init_descriptor()
 		objectAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		//using the pool we just set
 		objectAllocInfo.descriptorPool = _descriptorPool;
-		//only 1 descriptor = 
 		objectAllocInfo.descriptorSetCount = 1;
 		//using the global data layout
 		objectAllocInfo.pSetLayouts = &_objectSetLayout;
@@ -990,7 +991,7 @@ void VulkanEngine::init_descriptor()
 		objectInfo.offset = 0;
 		objectInfo.range = sizeof(GPUObjectData) * MAX_OBJECT;
 
-		VkWriteDescriptorSet cameraWrite = vkinit::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescrptor, &cameraInfo, 0);
+		VkWriteDescriptorSet cameraWrite = vkinit::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescrptor, &cameraInfo, 0);
 
 		VkWriteDescriptorSet sceneWrite = vkinit::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescrptor, &sceneInfo, 1);
 
@@ -1001,20 +1002,18 @@ void VulkanEngine::init_descriptor()
 		vkUpdateDescriptorSets(_device, 3, setWrites, 0, nullptr);
 	}
 
-	// add buffers to deletion queues
-	for (int i = 0; i < FRAME_OVERLAP; i++)
-	{
-		_mainDeletionQueue.push_function([&]() {
-			vmaDestroyBuffer(_allocator, _frames[i].cameraBuffer._buffer, _frames[i].cameraBuffer._allocation);
-			vmaDestroyBuffer(_allocator, _frames[i].objectBuffer._buffer, _frames[i].objectBuffer._allocation);
-			});
-	}
+	// add buffers to deletion queue
 
 	_mainDeletionQueue.push_function([&]() {
+		vmaDestroyBuffer(_allocator, _sceneParameterBuffer._buffer, _sceneParameterBuffer._allocation);
 		vkDestroyDescriptorSetLayout(_device, _globalSetLayout, nullptr);
 		vkDestroyDescriptorSetLayout(_device, _objectSetLayout, nullptr);
 		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
-		vmaDestroyBuffer(_allocator, _sceneParameterBuffer._buffer, _sceneParameterBuffer._allocation);
-		});
+		
+		for (int i = 0; i < FRAME_OVERLAP; i++)
+		{
+			vmaDestroyBuffer(_allocator, _frames[i].objectBuffer._buffer, _frames[i].objectBuffer._allocation);
+		}
+	});
 }
 
