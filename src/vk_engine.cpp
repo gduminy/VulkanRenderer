@@ -114,6 +114,10 @@ void VulkanEngine::init_vulkan()
 	allocatorInfo.instance = _instance;
 	vmaCreateAllocator(&allocatorInfo, &_allocator);
 
+	_mainDeletionQueue.push_function([&]() {
+		vmaDestroyAllocator(_allocator);
+		});
+
 	_gpuProperties = vkbDevice.physical_device.properties;
 	std::cout << "The GPU has a minimum buffer alignment of " << _gpuProperties.limits.minUniformBufferOffsetAlignment << std::endl;
 }
@@ -134,6 +138,11 @@ void VulkanEngine::init_swapchain()
 	_swapchainImageViews = vkbSwapchain.get_image_views().value();
 
 	_swapchainImageFormat = vkbSwapchain.image_format;
+
+	_mainDeletionQueue.push_function([=]()
+		{
+			vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+		});
 
 	//depth Image size will math the window
 	VkExtent3D depthImageExtent =
@@ -162,7 +171,6 @@ void VulkanEngine::init_swapchain()
 
 	_mainDeletionQueue.push_function([=]()
 		{
-			vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 			vkDestroyImageView(_device, _depthImageView, nullptr);
 			vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 		});
@@ -185,6 +193,17 @@ void VulkanEngine::init_commands()
 				vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
 			});
 	}
+
+	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
+
+	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
+	_mainDeletionQueue.push_function([=]()
+		{
+			vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
+		});
+
+	VkCommandBufferAllocateInfo cmdUploadAllocInfo = vkinit::command_buffer_allocate_info(_uploadContext._commandPool, 1);
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdUploadAllocInfo, &_uploadContext._commandBuffer));
 
 
 }
@@ -337,6 +356,14 @@ void VulkanEngine::init_sync_structures()
 				vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
 			});
 	}
+
+	VkFenceCreateInfo uploadFenceCreateInfo = vkinit::fence_create_info();
+	VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
+	_mainDeletionQueue.push_function([=]()
+		{
+			vkDestroyFence(_device, _uploadContext._uploadFence, nullptr);
+		});
+
 
 }
 
@@ -546,40 +573,94 @@ void VulkanEngine::load_meshes()
 
 void VulkanEngine::upload_mesh(Mesh& mesh)
 {
+	const size_t bufferSize = mesh._vertices.size() * sizeof(Vertex);
 	//allocate vertex buffer
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	VkBufferCreateInfo stagingBufferInfo = {};
+	stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	//this is the total size, in bytes of the buffer we are allocating
-	bufferInfo.size = mesh._vertices.size() * sizeof(Vertex);
-	//this buffer is going to be used as a vertex buffer
-	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	stagingBufferInfo.size = bufferSize;
+	stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	stagingBufferInfo.pNext = nullptr;
 
-	//let the VMA library know that this data should be writeable by CPU, but also readable by GPU
+	//let the VMA library know that this data should be on CPU RAM
 	VmaAllocationCreateInfo vmaAllocInfo = {};
-	vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+	vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+	AllocatedBuffer stagingBuffer;
 
 	//allocate the buffer
 	VK_CHECK(vmaCreateBuffer(
 		_allocator,
-		&bufferInfo,
+		&stagingBufferInfo,
 		&vmaAllocInfo,
+		&stagingBuffer._buffer,
+		&stagingBuffer._allocation,
+		nullptr));
+
+	//copy vertex data
+	void* data;
+	vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
+
+	memcpy(data, mesh._vertices.data(), bufferSize);
+
+	vmaUnmapMemory(_allocator, stagingBuffer._allocation);
+
+	VkBufferCreateInfo vertexBufferInfo = {};
+	vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	vertexBufferInfo.pNext = nullptr;
+	//this is the total size, in bytes, of the buffer we are allocating
+	vertexBufferInfo.size = mesh._vertices.size() * sizeof(Vertex);
+	//this buffer is going to be used as a Vertex Buffer
+	vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+	//let the VMA library know that this data should be GPU native
+	vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+	//allocate the buffer
+	VK_CHECK(vmaCreateBuffer(_allocator, &vertexBufferInfo, &vmaAllocInfo,
 		&mesh._vertexBuffer._buffer,
 		&mesh._vertexBuffer._allocation,
 		nullptr));
 
-	//add the destruction of triangle meshg buffer to the deletion queue
-	_mainDeletionQueue.push_function([=]()
+	immediateSubmit([=](VkCommandBuffer cmd)
 		{
-			vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation);
+			VkBufferCopy copy;
+			copy.dstOffset = 0;
+			copy.srcOffset = 0; 
+			copy.size = bufferSize;
+			vkCmdCopyBuffer(cmd, stagingBuffer._buffer, mesh._vertexBuffer._buffer, 1, &copy);
 		});
 
-	//copy vertex data
-	void* data;
-	vmaMapMemory(_allocator, mesh._vertexBuffer._allocation, &data);
+	//add the destruction of mesh buffer to the deletion queue
+	_mainDeletionQueue.push_function([=]() {
+		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation);
+		});
 
-	memcpy(data, mesh._vertices.data(), mesh._vertices.size() * sizeof(Vertex));
+	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 
-	vmaUnmapMemory(_allocator, mesh._vertexBuffer._allocation);
+}
+
+void VulkanEngine::immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function)
+{
+	VkCommandBuffer cmd = _uploadContext._commandBuffer;
+
+	VkCommandBufferBeginInfo cmdBegin = vkinit::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBegin));
+
+	function(cmd);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkSubmitInfo submit = vkinit::submitInfo(&cmd);
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _uploadContext._uploadFence));
+
+	VK_CHECK(vkWaitForFences(_device, 1, &_uploadContext._uploadFence, true, 9999999999));
+	VK_CHECK(vkResetFences(_device, 1, &_uploadContext._uploadFence));
+
+	// reset the command buffers inside the command pool
+	vkResetCommandPool(_device, _uploadContext._commandPool, 0);
 }
 
 void VulkanEngine::cleanup()

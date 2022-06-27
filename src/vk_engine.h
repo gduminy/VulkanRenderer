@@ -89,6 +89,13 @@ struct GPUSceneData
 	glm::vec4 sunlightColor;
 };
 
+struct UploadContext
+{
+	VkFence _uploadFence;
+	VkCommandPool _commandPool;
+	VkCommandBuffer _commandBuffer;
+};
+
 class VulkanEngine {
 public:
 
@@ -136,8 +143,7 @@ public:
 	GPUSceneData _sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;
 
-	//Exersice 1 desc set et 1 buffer pour camera e tscenebuffer avec data de toutes les frames; 
-	AllocatedBuffer _sceneAndCameraParameterBuffer;
+	UploadContext _uploadContext;
 
 	int _selectedShader{ 0 };
 
@@ -196,6 +202,8 @@ private:
 	void load_meshes();
 
 	void upload_mesh(Mesh& mesh);
+
+	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
 };
 
 

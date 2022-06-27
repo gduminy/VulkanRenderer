@@ -41,5 +41,9 @@ namespace vkinit {
 	VkDescriptorSetLayoutBinding descriptorLayoutBinding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding);
 
 	VkWriteDescriptorSet writeDescriptorBuffer(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorBufferInfo* bufferInfo, uint32_t binding);
+
+	VkCommandBufferBeginInfo commandBufferBeginInfo(VkCommandBufferUsageFlags flags = 0);
+
+	VkSubmitInfo submitInfo(VkCommandBuffer* cmd);
 }
 
