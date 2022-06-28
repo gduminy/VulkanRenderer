@@ -267,3 +267,48 @@ VkSubmitInfo vkinit::submitInfo(VkCommandBuffer* cmd)
 
 	return info;
 }
+
+VkSamplerCreateInfo vkinit::samplerCreateInfoInfo(VkFilter filters, VkSamplerAddressMode samplerAddressMode /*= VK_SAMPLER_ADDRESS_MODE_REPEAT*/)
+{
+	VkSamplerCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	info.pNext = nullptr;
+
+	info.magFilter = filters;
+	info.minFilter = filters;
+	info.addressModeU = samplerAddressMode;
+	info.addressModeV = samplerAddressMode;
+	info.addressModeW = samplerAddressMode;
+
+	return info;
+}
+
+VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo* imageInfo, uint32_t binding)
+{
+	VkWriteDescriptorSet write = {};
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext = nullptr;
+
+	write.dstBinding = binding;
+	write.dstSet = dstSet;
+	write.descriptorCount = 1;
+	write.descriptorType = type;
+	write.pImageInfo = imageInfo;
+
+	return write;
+}
+
+VkFramebufferCreateInfo vkinit::framebuffer_create_info(VkRenderPass renderPass, VkExtent2D extent)
+{
+	VkFramebufferCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	info.pNext = nullptr;
+
+	info.renderPass = renderPass;
+	info.attachmentCount = 1;
+	info.width = extent.width;
+	info.height = extent.height;
+	info.layers = 1;
+
+	return info;
+}

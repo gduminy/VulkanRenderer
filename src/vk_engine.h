@@ -41,6 +41,7 @@ struct DeletionQueue
 
 struct Material 
 {
+	VkDescriptorSet textureSet{ VK_NULL_HANDLE };
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
 };
@@ -50,6 +51,12 @@ struct RenderObject
 	Mesh* mesh;
 	Material* material;
 	glm::mat4 transformMatrix;
+};
+
+struct Texture
+{
+	AllocatedImage image;
+	VkImageView imageView;
 };
 
 struct GPUCameraData
@@ -145,6 +152,10 @@ public:
 
 	UploadContext _uploadContext;
 
+	std::unordered_map<std::string, Texture> loadedTextures;
+
+	VkDescriptorSetLayout singleTextureSetLayout;
+
 	int _selectedShader{ 0 };
 
 	bool _isInitialized{ false };
@@ -178,6 +189,8 @@ public:
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	size_t padUniformBufferSize(size_t originalSize);
 	
+	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
+	void load_images();
 private:
 	void init_vulkan();
 
@@ -203,7 +216,7 @@ private:
 
 	void upload_mesh(Mesh& mesh);
 
-	void immediateSubmit(std::function<void(VkCommandBuffer cmd)>&& function);
+
 };
 
 
