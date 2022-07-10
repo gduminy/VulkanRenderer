@@ -39,6 +39,10 @@ foreach(GLSL ${GLSL_SOURCE_FILES})
   list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach(GLSL)
 
+file(GLOB_RECURSE HLSL_SOURCE_FILES
+    "${PROJECT_SOURCE_DIR}/shaders/*.hlsl"
+    )
+
 add_custom_target(
     Shaders 
     DEPENDS ${SPIRV_BINARY_FILES}

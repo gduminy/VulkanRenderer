@@ -5,6 +5,10 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${PROJECT_SOURCE_DIR}/shaders/*.comp"
     )
 
+file(GLOB_RECURSE HLSL_SOURCE_FILES
+    "${PROJECT_SOURCE_DIR}/shaders/*.hlsl"
+    )
+
 add_executable(vulkan_guide
     main.cpp
     vk_engine.cpp
@@ -18,7 +22,11 @@ add_executable(vulkan_guide
     vk_mesh.cpp
     vk_textures.h
     vk_textures.cpp
-    ${GLSL_SOURCE_FILES})
+    dx_engine.h
+    dx_engine.cpp
+    d3dx12.h
+    ${GLSL_SOURCE_FILES}
+    ${HLSL_SOURCE_FILES})
 
 set_property(TARGET vulkan_guide PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:vulkan_guide>")
 
@@ -26,5 +34,12 @@ target_include_directories(vulkan_guide PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(vulkan_guide vkbootstrap vma glm tinyobjloader imgui stb_image)
 
 target_link_libraries(vulkan_guide Vulkan::Vulkan sdl2)
+# DX12 libraries
+target_link_libraries(vulkan_guide
+    d3d12.lib
+    dxgi.lib
+    dxguid.lib
+    d3dcompiler.lib
+)
 
 add_dependencies(vulkan_guide Shaders)
