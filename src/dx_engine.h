@@ -43,8 +43,10 @@ public:
 
 
 	ComPtr<ID3D12CommandQueue> m_commandQueue;
-	ComPtr<ID3D12CommandAllocator> m_commandAllocator;
+	ComPtr<ID3D12CommandAllocator> m_commandAllocator[FRAME_OVERLAP];
+	ComPtr<ID3D12CommandAllocator> m_bundleAllocator[FRAME_OVERLAP];
 	ComPtr<ID3D12GraphicsCommandList> m_commandList;
+	ComPtr<ID3D12GraphicsCommandList> m_bundle;
 
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
 	UINT m_rtvDescriptorSize;
@@ -56,14 +58,15 @@ public:
 	UINT m_frameIndex;
 	HANDLE m_fenceEvent;
 	ComPtr<ID3D12Fence> m_fence;
-	UINT64 m_fenceValue;
+	UINT64 m_fenceValue[FRAME_OVERLAP];
 
 private:
 	static const UINT FrameCount = 2;
 	void LoadPipeline();
 	void LoadAssets();
 
+	void WaitForGpu();
 	//utility
-	void WaitForPreviousFrame();
+	void MoveToNextFrame();
 	void PopulateCommandList();
 };
