@@ -59,18 +59,9 @@ public:
 	UINT64 m_fenceValue;
 
 private:
-	void init_dx12();
-
-	void init_swapchain();
-
-	void init_command();
-
-	void init_pipeline();
-
-	void upload_mesh();
-
-	void init_sync_structures();
-
+	static const UINT FrameCount = 2;
+	void LoadPipeline();
+	void LoadAssets();
 
 	//utility
 	void WaitForPreviousFrame();
