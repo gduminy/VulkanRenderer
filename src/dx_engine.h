@@ -5,6 +5,7 @@
 #include <directxmath.h>
 
 using namespace Microsoft::WRL;
+using namespace DirectX;
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 
@@ -14,6 +15,13 @@ struct Vertex
 	DirectX::XMFLOAT4 color;
 };
 
+struct SceneConstantBuffer
+{
+	XMFLOAT4 offset;
+	float padding[60]; //Padding so the constant buffer is 256-byte aligned.
+};
+static_assert((sizeof(SceneConstantBuffer) % 256) == 0, "Constant buffer size must be aligned on 256 bytes");
+
 class DxEngine
 {
 public:
@@ -22,6 +30,8 @@ public:
 	void init(int width, int height);
 	//shuts down the engine
 	void cleanup();
+	// Update frame-based values.
+	void update();
 	//draw loop
 	void draw();
 	//run main loop
@@ -54,6 +64,11 @@ public:
 
 	ComPtr<ID3D12Resource> m_vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
+
+	ComPtr<ID3D12DescriptorHeap> m_cbvHeap;
+	ComPtr<ID3D12Resource> m_constantBuffer;
+	SceneConstantBuffer m_constantBufferData = {};
+	UINT8* m_pCbvDataBegin;
 
 	UINT m_frameIndex;
 	HANDLE m_fenceEvent;
