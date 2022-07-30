@@ -3,16 +3,21 @@
 #include <dxgi1_4.h>
 #include <wrl/module.h>
 #include <directxmath.h>
+#include <vector>
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
 
 constexpr unsigned int FRAME_OVERLAP = 2;
+constexpr unsigned int TextureWidth = 256;
+constexpr unsigned int TextureHeight = 256;
+constexpr unsigned int TexturePixelSize = 4;  // The number of bytes used to represent a pixel in the texture.
 
 struct Vertex
 {
-	DirectX::XMFLOAT3 position;
-	DirectX::XMFLOAT4 color;
+	XMFLOAT3 position;
+	XMFLOAT4 color;
+	XMFLOAT2 uv;
 };
 
 struct SceneConstantBuffer
@@ -65,10 +70,13 @@ public:
 	ComPtr<ID3D12Resource> m_vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
 
-	ComPtr<ID3D12DescriptorHeap> m_cbvHeap;
+	ComPtr<ID3D12DescriptorHeap> m_cbvsrvHeap;
 	ComPtr<ID3D12Resource> m_constantBuffer;
 	SceneConstantBuffer m_constantBufferData = {};
 	UINT8* m_pCbvDataBegin;
+
+	//ComPtr<ID3D12DescriptorHeap> m_srvHeap;
+	ComPtr<ID3D12Resource> m_texture;
 
 	UINT m_frameIndex;
 	HANDLE m_fenceEvent;
@@ -83,5 +91,6 @@ private:
 	void WaitForGpu();
 	//utility
 	void MoveToNextFrame();
+	std::vector<UINT8> GenerateTextureData();
 	void PopulateCommandList();
 };
