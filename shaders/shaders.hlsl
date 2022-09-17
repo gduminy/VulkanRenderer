@@ -1,6 +1,7 @@
 struct PSInput
 {
     float4 position : SV_POSITION;
+    float4 normal : NORMAL;
     float4 color : COLOR;
     float2 uv : TEXCOORD;
 };
@@ -14,11 +15,12 @@ cbuffer SceneConstantBuffer : register(b0)
     float4 padding[15];
 };
 
-PSInput VSMain(float4 position : POSITION, float4 color : COLOR, float2 uv : TEXCOORD )
+PSInput VSMain(float4 position : POSITION, float4 normal : NORMAL, float4 color : COLOR, float2 uv : TEXCOORD )
 {
     PSInput result;
 
-    result.position = position + offset;
+    result.position = position;
+    result.normal = normal;
     result.color = color;
     result.uv = uv;
 
@@ -27,5 +29,6 @@ PSInput VSMain(float4 position : POSITION, float4 color : COLOR, float2 uv : TEX
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-   return g_texture.Sample(g_sampler, input.uv) + input.color;
+   //return g_texture.Sample(g_sampler, input.uv) + input.color;
+    return input.color;
 }

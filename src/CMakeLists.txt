@@ -25,13 +25,18 @@ add_executable(vulkan_guide
     dx_engine.h
     dx_engine.cpp
     d3dx12.h
+    Helper.h
+    dx_mesh.h
+    dx_mesh.cpp
+    SimpleCamera.h
+    SimpleCamera.cpp
     ${GLSL_SOURCE_FILES}
     ${HLSL_SOURCE_FILES})
 
 set_property(TARGET vulkan_guide PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:vulkan_guide>")
 
 target_include_directories(vulkan_guide PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(vulkan_guide vkbootstrap vma glm tinyobjloader imgui stb_image)
+target_link_libraries(vulkan_guide vkbootstrap vma glm tinyobjloader imgui stb_image D3D12MemoryAllocator)
 
 target_link_libraries(vulkan_guide Vulkan::Vulkan sdl2)
 # DX12 libraries

@@ -3,6 +3,7 @@ find_package(Vulkan REQUIRED)
 add_library(vkbootstrap STATIC)
 add_library(glm INTERFACE)
 add_library(vma INTERFACE)
+add_library(D3D12MemoryAllocator INTERFACE)
 
 add_library(stb_image INTERFACE)
 
@@ -18,6 +19,7 @@ target_link_libraries(vkbootstrap PUBLIC Vulkan::Vulkan $<$<BOOL:UNIX>:${CMAKE_D
 
 #both vma and glm and header only libs so we only need the include path
 target_include_directories(vma INTERFACE vma)
+target_include_directories(D3D12MemoryAllocator INTERFACE D3D12MemoryAllocator)
 target_include_directories(glm INTERFACE glm)
 
 target_sources(tinyobjloader PRIVATE 

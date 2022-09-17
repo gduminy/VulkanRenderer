@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
 #elif DX12
 	DxEngine engine;
 
-	engine.init(1280, 720);
+	engine.init(1700, 900);
 
 	engine.run();
 
