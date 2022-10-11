@@ -25,9 +25,11 @@ struct Vertex
 
 struct Mesh
 {
-	std::vector<Vertex> m_vertices;
-	ComPtr<ID3D12Resource> m_vertexBuffer;
-	ComPtr<ID3D12Resource> m_vertexBufferUploadHeap;
+	std::vector<Vertex> vertices;
+	ComPtr<ID3D12Resource> vertexBuffer;
+	ComPtr<ID3D12Resource> vertexBufferUploadHeap;
+	//ComPtr<D3D12_VERTEX_BUFFER_VIEW> vertexBufferView;
 
 	bool LoadFromObj(const char* filename);
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView();
 };

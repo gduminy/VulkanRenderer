@@ -71,11 +71,24 @@ bool Mesh::LoadFromObj(const char* filename)
 				new_vert.color = new_vert.normal;
 
 
-				m_vertices.push_back(new_vert);
+				vertices.push_back(new_vert);
 			}
 			index_offset += fv;
 		}
 	}
 
 	return true;
+}
+
+D3D12_VERTEX_BUFFER_VIEW Mesh::vertexBufferView()
+{
+	D3D12_VERTEX_BUFFER_VIEW VBView;
+	VBView.BufferLocation = this->vertexBuffer->GetGPUVirtualAddress();
+	VBView.StrideInBytes = sizeof(Vertex);
+	VBView.SizeInBytes = this->vertices.size() * sizeof(Vertex);
+	
+// 	VBView.BufferLocation = this->vertexBuffer->GetGPUVirtualAddress();
+// 	VBView.StrideInBytes = sizeof(Vertex);
+// 	VBView.SizeInBytes = this->vertices.size() * sizeof(Vertex);
+	return VBView;
 }
