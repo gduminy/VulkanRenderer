@@ -30,6 +30,10 @@ add_executable(vulkan_guide
     dx_mesh.cpp
     SimpleCamera.h
     SimpleCamera.cpp
+    dx_texture.h
+    dx_texture.cpp
+    dx_initializers.h
+    dx_initializers.cpp
     ${GLSL_SOURCE_FILES}
     ${HLSL_SOURCE_FILES})
 

@@ -6,20 +6,25 @@ struct PSInput
     float2 uv : TEXCOORD;
 };
 
-Texture2D g_texture : register(t0);
-SamplerState g_sampler : register(s0);
-
 cbuffer SceneConstantBuffer : register(b0)
 {
-    float4 offset;
-    float4 padding[15];
+    float4x4 g_mWorldViewProj;
 };
+
+struct MaterialConstants
+{
+    uint matIndex;    // Dynamically set index for looking up from g_txMats[].
+};
+
+ConstantBuffer<MaterialConstants> materialConstants : register(b0, space0);
+Texture2D g_texture[] : register(t0);
+SamplerState g_sampler : register(s0);
 
 PSInput VSMain(float4 position : POSITION, float4 normal : NORMAL, float4 color : COLOR, float2 uv : TEXCOORD )
 {
     PSInput result;
 
-    result.position = position;
+    result.position = mul(position, g_mWorldViewProj);
     result.normal = normal;
     result.color = color;
     result.uv = uv;
@@ -29,6 +34,5 @@ PSInput VSMain(float4 position : POSITION, float4 normal : NORMAL, float4 color 
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-   //return g_texture.Sample(g_sampler, input.uv) + input.color;
-    return input.color;
+   return g_texture[materialConstants.matIndex].Sample(g_sampler, input.uv);
 }

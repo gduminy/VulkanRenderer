@@ -7,33 +7,10 @@
 #include <d3dcompiler.h>
 #include "Helper.h"
 #include <DirectXMathMatrix.inl>
-
-// #define DX_CHECK(x)															\
-// 	do																		\
-// 	{																		\
-// 		HRESULT err = x;													\
-// 		if (x < 0)															\
-// 		{																	\
-// 			std::cout << "Detected Direct X error: " << err << std::endl;	\
-// 			abort();														\
-// 		}																	\
-// 	} while (0);															\
-
-static void throwIfFail(HRESULT hr, const char* errMessage)
-{
-	if (FAILED(hr))
-	{
-		throw std::runtime_error(errMessage);
-	}
-}
-
-inline void ThrowIfFailed(HRESULT hr)
-{
-	if (FAILED(hr))
-	{
-		throw std::runtime_error("");
-	}
-}
+#include "dx_initializers.h"
+#include "dx_texture.h"
+#include "imgui_impl_sdl.h"
+#include "imgui_impl_dx12.h"
 
 void DxEngine::init(int width, int height)
 {
@@ -55,6 +32,7 @@ void DxEngine::init(int width, int height)
 	LoadPipeline();
 	LoadAssets();
 	InitScene();
+	InitImGui();
 
 
 	//everything went fine
@@ -79,14 +57,6 @@ void DxEngine::update()
 
 	m_timer.Tick(NULL);
 
-// 	if (m_frameCounter == 500)
-// 	{
-// 		// Update window text with FPS value.
-// 		wchar_t fps[64];
-// 		swprintf_s(fps, L"%ufps", m_timer.GetFramesPerSecond());
-// 		m_frameCounter = 0;
-// 	}
-
 	m_frameCounter++;
 
 	m_camera.Update(static_cast<float>(m_timer.GetElapsedSeconds()));
@@ -105,27 +75,11 @@ void DxEngine::update()
 		memcpy(&m_pCbvDataBegin[i], &m_meshConstantBufferData, sizeof(m_meshConstantBufferData));
 	}
 
-
-// 	XMFLOAT4X4 mvp;
-// 	XMStoreFloat4x4(&mvp, XMMatrixTranspose(model * view * projection));
-// 
-// 	m_meshConstantBufferData.mvp = mvp;
-// 
-// 	memcpy(m_pCbvDataBegin, &m_meshConstantBufferData, sizeof(m_meshConstantBufferData));
-
-// 	const float translationSpeed = 0.001f;
-// 	const float offsetBounds = 1.25f;
-// 
-// 	m_constantBufferData.offset.x += translationSpeed;
-// 	if (m_constantBufferData.offset.x > offsetBounds)
-// 	{
-// 		m_constantBufferData.offset.x = -offsetBounds;
-// 	}
-// 	memcpy(m_pCbvDataBegin, &m_constantBufferData, sizeof(m_constantBufferData));
 }
 
 void DxEngine::draw()
 {
+	ImGui::Render();
 	// Record all the commands we need to render the scene into the command list.
 	PopulateCommandList();
 
@@ -150,6 +104,9 @@ void DxEngine::run()
 		//Handle events on queue
 		while (SDL_PollEvent(&e) != 0)
 		{
+			//ImGui Process Event
+			ImGui_ImplSDL2_ProcessEvent(&e);
+
 			//close the window when user alt-f4s or clicks the X button		
 			if (e.type == SDL_QUIT)
 			{
@@ -164,6 +121,17 @@ void DxEngine::run()
 				m_camera.OnKeyUp(e.key.keysym.scancode);
 			}
 		}
+
+
+		//imgui new frame
+		ImGui_ImplDX12_NewFrame();
+		ImGui_ImplSDL2_NewFrame(window);
+
+		ImGui::NewFrame();
+
+
+		ImGui::ShowDemoWindow();
+
 		update();
 		draw();
 	}
@@ -205,21 +173,28 @@ Mesh* DxEngine::getMesh(const std::string& name)
 	}
 }
 
-void DxEngine::drawObjects(ComPtr<ID3D12GraphicsCommandList> commandList, RenderObject* first, int count)
+void DxEngine::drawObjects(ComPtr<ID3D12GraphicsCommandList> commandList, RenderObjectDx* first, int count)
 {
 	XMMATRIX view = m_camera.GetViewMatrix();
 	//XMMATRIX projection = m_camera.GetProjectionMatrix(0.8f, m_aspectRatio);
-	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetGPUDescriptorHandleForHeapStart());
-	cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetGPUDescriptorHandleForHeapStart(), 2, m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	//cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
 	Mesh* lastMesh = nullptr;
 	Material* lastMaterial = nullptr;
+	int lastMatIndex = INT_MAX;
 	for ( int i = 0; i < count; i++)
 	{
-		RenderObject& object = first[i];
+		RenderObjectDx& object = first[i];
 		if (object.material != lastMaterial)
 		{
 			commandList->SetPipelineState(object.material->m_pipelineState);
 			lastMaterial = object.material;
+		}
+
+		if (object.matIndex != lastMatIndex)
+		{
+			lastMatIndex = object.matIndex;
+			commandList->SetGraphicsRoot32BitConstant(3, object.matIndex, 0);
 		}
 
 		m_commandList->SetGraphicsRootDescriptorTable(1, cbvsrvHandle);
@@ -363,12 +338,21 @@ void DxEngine::LoadPipeline()
 		ThrowIfFailed(m_device->CreateDescriptorHeap(&cbvsrvHeapDesc, IID_PPV_ARGS(&m_cbvsrvHeap)));
 		NAME_D3D12_OBJECT(m_cbvsrvHeap);
 
+		 m_cbvSrvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
 		// Describe and create a depth stencil view (DSV) descriptor heap.
 		D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 		dsvHeapDesc.NumDescriptors = 1;
 		dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 		dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		ThrowIfFailed(m_device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&m_dsvHeap)));
+
+		// Describe and create a sampler descriptor heap.
+		D3D12_DESCRIPTOR_HEAP_DESC samplerHeapDesc = {};
+		samplerHeapDesc.NumDescriptors = 1;
+		samplerHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+		samplerHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		ThrowIfFailed(m_device->CreateDescriptorHeap(&samplerHeapDesc, IID_PPV_ARGS(&m_samplerHeap)));
 
 	}
 
@@ -402,35 +386,23 @@ void DxEngine::LoadPipeline()
 			featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 		}
 
-		CD3DX12_DESCRIPTOR_RANGE1 range[2];
-		CD3DX12_ROOT_PARAMETER1 rootParameters[2];
+		CD3DX12_DESCRIPTOR_RANGE1 range[3];
+		CD3DX12_ROOT_PARAMETER1 rootParameters[4];
 
-		range[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, 0);
+		range[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, 0);
 		range[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC, 0);
+		range[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
 
 		rootParameters[0].InitAsDescriptorTable(1, &range[0], D3D12_SHADER_VISIBILITY_PIXEL);
 		rootParameters[1].InitAsDescriptorTable(1, &range[1], D3D12_SHADER_VISIBILITY_VERTEX);
-
-		D3D12_STATIC_SAMPLER_DESC sampler = {};
-		sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-		sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-		sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-		sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-		sampler.MipLODBias = 0;
-		sampler.MaxAnisotropy = 1;
-		sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-		sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-		sampler.MinLOD = 0.0f;
-		sampler.MaxLOD = D3D12_FLOAT32_MAX;
-		sampler.ShaderRegister = 0;
-		sampler.RegisterSpace = 0;
-		sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		rootParameters[2].InitAsDescriptorTable(1, &range[2], D3D12_SHADER_VISIBILITY_PIXEL);
+		rootParameters[3].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 		CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
-		rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 1, &sampler, rootSignatureFlags);
+		rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
 
 		ComPtr<ID3DBlob> signature;
 		ComPtr<ID3DBlob> error;
@@ -451,10 +423,10 @@ void DxEngine::LoadPipeline()
 		UINT compileFlags = 0;
 #endif
 
-		ThrowIfFailed(D3DCompileFromFile(L"../../shaders/mesh.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
+		ThrowIfFailed(D3DCompileFromFile(L"../../shaders/mesh.hlsl", nullptr, nullptr, "VSMain", "vs_5_1", compileFlags, 0, &vertexShader, nullptr));
 		ThrowIfFailed(D3DCompileFromFile(L"../../shaders/mesh.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
 
-		// 		// Define the vertex input layout.
+		// Define the vertex input layout.
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 		{
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -466,29 +438,30 @@ void DxEngine::LoadPipeline()
 		CD3DX12_RASTERIZER_DESC rasterizerStateDesc(D3D12_DEFAULT);
 		rasterizerStateDesc.CullMode = D3D12_CULL_MODE_NONE;
 
-		// Describe and create the graphics pipeline state object (PSO).
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.InputLayout = { g_inputElementDescs, _countof(g_inputElementDescs) };
-		psoDesc.pRootSignature = m_rootSignature.Get();
-		psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
-		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
-		psoDesc.RasterizerState = rasterizerStateDesc;
-		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		psoDesc.SampleMask = UINT_MAX;
-		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 1;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-		psoDesc.SampleDesc.Count = 1;
-		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
-		NAME_D3D12_OBJECT(m_pipelineState);
+		D3D12_INPUT_LAYOUT_DESC inputLayoutDesc = { g_inputElementDescs, _countof(g_inputElementDescs) };
+
+		m_pipelineState = createPipelineState(m_device, inputLayoutDesc, m_rootSignature, vertexShader, pixelShader, rasterizerStateDesc);
 
 		createMaterial(m_rootSignature, m_pipelineState, "defaultMesh");
+
+		ComPtr<ID3DBlob> vertexShaderTextured;
+		ComPtr<ID3DBlob> pixelShaderTextured;
+
+		UINT8* pVertexShaderData;
+		UINT8* pPixelShaderData;
+		UINT vertexShaderDataLength;
+		UINT pixelShaderDataLength;
+
+		ThrowIfFailed(ReadDataFromFile(L"C:\\Users\\guill\\Documents\\GitHub\\vulkanRenderer\\bin\\Debug\\shader_vs.cso", &pVertexShaderData, &vertexShaderDataLength));
+		ThrowIfFailed(ReadDataFromFile(L"C:\\Users\\guill\\Documents\\GitHub\\vulkanRenderer\\bin\\Debug\\shader_ps.cso", &pPixelShaderData, &pixelShaderDataLength));
+
+// 		ThrowIfFailed(D3DCompileFromFile(L"../../shaders/shaders.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShaderTextured, nullptr));
+// 		ThrowIfFailed(D3DCompileFromFile(L"../../shaders/shaders.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShaderTextured, nullptr));
+
+		m_pipelineStateTextured = createPipelineState(m_device, inputLayoutDesc, m_rootSignature, pVertexShaderData, pPixelShaderData, vertexShaderDataLength, pixelShaderDataLength,  rasterizerStateDesc);
+
+		createMaterial(m_rootSignature, m_pipelineStateTextured, "texturedMesh");
 	}
-
-	// Create the command list.
-
 
 }
 
@@ -513,18 +486,24 @@ void DxEngine::LoadAssets()
 			nullptr,
 			IID_PPV_ARGS(&m_constantBuffer)));
 		NAME_D3D12_OBJECT(m_constantBuffer);
-		// Describe and create a constant buffer view.
-// 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-// 		cbvDesc.BufferLocation = m_constantBuffer->GetGPUVirtualAddress();
-// 		cbvDesc.SizeInBytes = constantBufferSize;
-// 		m_device->CreateConstantBufferView(&cbvDesc, m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart());
 
 		// Map and initialize the constant buffer. We don't unmap this until the
 		// app closes. Keeping things mapped for the lifetime of the resource is okay.
 		CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
 		ThrowIfFailed(m_constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&m_pCbvDataBegin)));
-		//memcpy(m_pCbvDataBegin, &m_meshConstantBufferData, sizeof(m_meshConstantBufferData));
 	}
+
+	D3D12_SAMPLER_DESC samplerDesc = {};
+	samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	samplerDesc.MinLOD = 0;
+	samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+	samplerDesc.MipLODBias = 0.0f;
+	samplerDesc.MaxAnisotropy = 1;
+	samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	m_device->CreateSampler(&samplerDesc, m_samplerHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// Note: ComPtr's are CPU objects but this resource needs to stay in scope until
 	// the command list that references it has finished executing on the GPU.
@@ -584,6 +563,8 @@ void DxEngine::LoadAssets()
 		srvDesc.Texture2D.MipLevels = 1;
 		CD3DX12_CPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart());
 		m_device->CreateShaderResourceView(m_texture.Get(), &srvDesc, cbvsrvHandle);
+
+		LoadImages();
 	}
 
 	// Create the depth stencil view.
@@ -664,13 +645,34 @@ void DxEngine::LoadMesh()
 	Mesh monkeyMesh = {};
 	m_monkeyMesh.LoadFromObj("../../assets/monkey_smooth.obj");
 
+	m_lostEmpire.LoadFromObj("../../assets/lost_empire.obj");
+
 	
 	UploadMesh(m_triangleMesh);
 	
 	UploadMesh(m_monkeyMesh);
+
+	UploadMesh(m_lostEmpire);
 	m_meshes["monkey"] = m_monkeyMesh;
 	m_meshes["triangle"] = m_triangleMesh;
+	m_meshes["empire"] = m_lostEmpire;
 
+}
+
+void DxEngine::LoadImages()
+{
+	dxutils::loadImageFromFile(*this, "../../assets/lost_empire-RGBA.png", m_lostEmpireTexture);
+	
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDescD = {};
+	srvDescD.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDescD.Format = m_lostEmpireTexture.Image->GetDesc().Format;
+	srvDescD.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDescD.Texture2D.MipLevels = 1;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart());
+	cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	m_device->CreateShaderResourceView(m_lostEmpireTexture.Image.Get(), &srvDescD, cbvsrvHandle);
+	 
+	m_loadedTextures["empire_diffuse"] = m_lostEmpireTexture;
 }
 
 void DxEngine::UploadMesh(Mesh& mesh)
@@ -711,13 +713,14 @@ void DxEngine::UploadMesh(Mesh& mesh)
 void DxEngine::InitScene()
 {
 	UINT64 cbOffset = 0;
-	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart());
-	cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
-
-	RenderObject monkey;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart(), 2, m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	//cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	
+	RenderObjectDx monkey;
 	monkey.mesh = getMesh("monkey");
 	monkey.material = getMaterial("defaultMesh");
 	monkey.tranformMatrix = XMMatrixIdentity();
+	monkey.matIndex = INT_MAX;
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = m_constantBuffer->GetGPUVirtualAddress() + cbOffset;
@@ -731,9 +734,10 @@ void DxEngine::InitScene()
 	{
 		for (int y  = -20; y <= 20; y++)
 		{
-			RenderObject tri;
+			RenderObjectDx tri;
 			tri.mesh = getMesh("triangle");
-			tri.material = getMaterial("defaultMesh");
+			tri.material = getMaterial("texturedMesh");
+			tri.matIndex = 0;
 			XMMATRIX translate = XMMatrixTranslation(x, 0, y);
 			XMMATRIX scale = XMMatrixScaling(0.2, 0.2, 0.2);
 			tri.tranformMatrix = translate * scale;
@@ -747,6 +751,35 @@ void DxEngine::InitScene()
 			m_renderables.push_back(tri);
 		}
 	}
+
+	RenderObjectDx map;
+	map.mesh = getMesh("empire");
+	map.material = getMaterial("texturedMesh");
+	map.matIndex = 1;
+	XMMATRIX translate = XMMatrixTranslation(0, 0, -100);
+	map.tranformMatrix = translate;
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDescMap = {};
+	cbvDescMap.BufferLocation = m_constantBuffer->GetGPUVirtualAddress() + cbOffset;
+	cbvDescMap.SizeInBytes = sizeof(MeshSceneConstantBuffer);
+	cbOffset += cbvDesc.SizeInBytes;
+	m_device->CreateConstantBufferView(&cbvDescMap, cbvsrvHandle);
+	cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+	
+	m_renderables.push_back(map);
+
+}
+
+void DxEngine::InitImGui()
+{
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	ImGui_ImplSDL2_InitForD3D(window);
+	ImGui_ImplDX12_Init(m_device.Get(), FRAME_OVERLAP, DXGI_FORMAT_R8G8B8A8_UNORM,
+		m_cbvsrvHeap.Get(),
+		m_cbvsrvHeap->GetCPUDescriptorHandleForHeapStart(),
+		m_cbvsrvHeap->GetGPUDescriptorHandleForHeapStart());
 }
 
 // Wait for pending GPU work to complete.
@@ -796,9 +829,10 @@ void DxEngine::PopulateCommandList()
 	// Set necessary state.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-	ID3D12DescriptorHeap* ppHeaps[] = { m_cbvsrvHeap.Get() };
+	ID3D12DescriptorHeap* ppHeaps[] = { m_cbvsrvHeap.Get(), m_samplerHeap.Get() };
 	m_commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 	m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvsrvHeap->GetGPUDescriptorHandleForHeapStart());
+	m_commandList->SetGraphicsRootDescriptorTable(2, m_samplerHeap->GetGPUDescriptorHandleForHeapStart());
 // 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvsrvHandle(m_cbvsrvHeap->GetGPUDescriptorHandleForHeapStart());
 // 	cbvsrvHandle.Offset(m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
 // 	m_commandList->SetGraphicsRootDescriptorTable(1, cbvsrvHandle);
@@ -821,12 +855,11 @@ void DxEngine::PopulateCommandList()
 	drawObjects(m_commandList, m_renderables.data(), m_renderables.size());
 // 	m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
 // 	m_commandList->DrawInstanced(m_monkeyMesh.m_vertices.size(), 1, 0, 0);
-	
 	//m_commandList->ExecuteBundle(m_bundle.Get());
-
+	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), m_commandList.Get());
 	// Indicate that the back buffer will now be used to present.
 	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
-
+	
 	ThrowIfFailed(m_commandList->Close());
 
 }
